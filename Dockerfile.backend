@@ -1,0 +1,21 @@
+# Standard Dockerfile for Node.js/Express backend
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy only package files first, install dependencies inside container
+COPY package.json package-lock.json* ./
+RUN npm install --production
+
+# Copy the rest of the backend source code (excluding node_modules)
+COPY . .
+
+# Ensure node_modules from host is not copied (use .dockerignore)
+# Create .dockerignore if not present
+
+# Expose the backend port (change if needed)
+EXPOSE 3001
+
+# Start the server
+CMD ["node", "server.js"]
