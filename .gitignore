@@ -1,0 +1,5 @@
+# Ignore sensitive and generated files
+uploads/
+logs/
+*.db
+audit.db
