@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const RedactionPanel = ({ 
+const RedactionPanel = ({
   fileId,
-  redactionAreas, 
-  selectedArea, 
-  onSelectedAreaChange, 
-  onRedactionComplete 
+  redactionAreas,
+  selectedArea,
+  onSelectedAreaChange,
+  onRedactionComplete
 }) => {
   const [reason, setReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastRedactedFileId, setLastRedactedFileId] = useState(null);
-  
+
   const [redactionCodes] = useState([
     { code: 'PERSONAL_INFO', label: 'Personal Information' },
     { code: 'NAME', label: 'Name' },
@@ -42,7 +42,6 @@ const RedactionPanel = ({
   };
 
   const handleApplyRedaction = async () => {
-    
     if (redactionAreas.length === 0) {
       alert('Please create at least one redaction area before applying redaction.');
       return;
@@ -54,8 +53,12 @@ const RedactionPanel = ({
     }
 
     setIsProcessing(true);
-    
+
     try {
+      // Fetch CSRF token first
+      const csrfRes = await axios.get('http://localhost:8080/api/csrf-token', { withCredentials: true });
+      const csrfToken = csrfRes.data.csrfToken;
+
       const redactionRequest = {
         fileId: fileId,
         redactionAreas: redactionAreas.map(area => ({
@@ -71,19 +74,21 @@ const RedactionPanel = ({
         redactionType: 'MANUAL'
       };
 
-
       const response = await axios.post('http://localhost:8080/api/redaction/redact', redactionRequest, {
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          'x-csrf-token': csrfToken
+        }
       });
-      
+
       // Store the redacted file ID for manual download
       setLastRedactedFileId(response.data.redactedFileId);
-      
+
       // Download the redacted PDF
       if (response.data.downloadUrl) {
         const downloadUrl = `http://localhost:8080${response.data.downloadUrl}`;
         const redactedFileId = response.data.redactedFileId;
-        
+
         // Test if the download URL is accessible
         fetch(downloadUrl, { credentials: 'include' })
           .then(fetchResponse => {
@@ -109,7 +114,7 @@ const RedactionPanel = ({
         console.error('No download URL received from server');
         alert('Redaction applied successfully! Use the download button below to get your file.');
       }
-      
+
       onRedactionComplete();
     } catch (error) {
       console.error('Redaction error:', error);
@@ -130,7 +135,7 @@ const RedactionPanel = ({
     }
 
     const downloadUrl = `http://localhost:8080/api/redaction/download/${lastRedactedFileId}`;
-    
+
     const link = document.createElement('a');
     link.href = downloadUrl;
     link.download = `redacted-${lastRedactedFileId}.pdf`;
@@ -155,13 +160,13 @@ const RedactionPanel = ({
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Redaction Summary
         </h3>
-        
+
         <div className="space-y-3">
           <div className="flex justify-between">
             <span className="text-gray-600">Total Areas:</span>
             <span className="font-medium">{getTotalAreas()}</span>
           </div>
-          
+
           {Object.entries(getAreasByCode()).map(([code, count]) => {
             const codeInfo = redactionCodes.find(c => c.code === code);
             return (
@@ -180,7 +185,7 @@ const RedactionPanel = ({
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Selected Area Details
           </h3>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -198,7 +203,7 @@ const RedactionPanel = ({
                 ))}
               </select>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Description (Optional)
@@ -211,7 +216,7 @@ const RedactionPanel = ({
                 rows={3}
               />
             </div>
-            
+
             <div className="text-sm text-gray-600">
               <p><strong>Page:</strong> {selectedArea.pageNumber}</p>
               <p><strong>Position:</strong> ({Math.round(selectedArea.x)}, {Math.round(selectedArea.y)})</p>
@@ -226,7 +231,7 @@ const RedactionPanel = ({
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Redaction Details
         </h3>
-        
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Reason for Redaction
@@ -246,7 +251,7 @@ const RedactionPanel = ({
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Apply Redaction
         </h3>
-        
+
         <div className="space-y-4">
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex">
@@ -260,13 +265,13 @@ const RedactionPanel = ({
                   Irreversible Action
                 </h4>
                 <p className="mt-1 text-sm text-yellow-700">
-                  This action will permanently remove the selected content from the PDF. 
+                  This action will permanently remove the selected content from the PDF.
                   This cannot be undone.
                 </p>
               </div>
             </div>
           </div>
-          
+
           <button
             onClick={handleApplyRedaction}
             disabled={isProcessing || redactionAreas.length === 0}
@@ -274,7 +279,7 @@ const RedactionPanel = ({
           >
             {isProcessing ? 'Processing...' : 'Apply Irreversible Redaction'}
           </button>
-          
+
           {/* Download Button */}
           {lastRedactedFileId && (
             <button

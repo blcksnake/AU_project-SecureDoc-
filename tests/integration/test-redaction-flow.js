@@ -10,8 +10,14 @@ describe('Redaction Flow Integration Tests', () => {
     const filePath = path.join(__dirname, '../fixtures/test-document.pdf');
     expect(fs.existsSync(filePath)).toBe(true); // check file existence
 
+
+    // Fetch CSRF token
+    const csrfRes = await agent.get('/api/csrf-token');
+    const csrfToken = csrfRes.body.csrfToken;
+
     const uploadResponse = await agent
       .post('/api/redaction/upload')
+      .set('x-csrf-token', csrfToken)
       .attach('file', filePath)
       .expect(200);
 
@@ -34,8 +40,13 @@ describe('Redaction Flow Integration Tests', () => {
       ]
     };
 
+    // Fetch new CSRF token for each POST (simulate browser behavior)
+    const csrfRes2 = await agent.get('/api/csrf-token');
+    const csrfToken2 = csrfRes2.body.csrfToken;
+
     const redactionResponse = await agent
       .post('/api/redaction/redact')
+      .set('x-csrf-token', csrfToken2)
       .send(redactionData)
       .expect(200);
 

@@ -20,7 +20,7 @@ const FileUpload = ({ onFileUpload }) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFile(e.dataTransfer.files[0]);
     }
@@ -43,12 +43,17 @@ const FileUpload = ({ onFileUpload }) => {
     setUploadResult(null);
 
     try {
+      // Fetch CSRF token first
+      const csrfRes = await axios.get('http://localhost:8080/api/csrf-token', { withCredentials: true });
+      const csrfToken = csrfRes.data.csrfToken;
+
       const formData = new FormData();
       formData.append('file', file);
 
       const response = await axios.post('http://localhost:8080/api/redaction/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          'x-csrf-token': csrfToken
         },
         withCredentials: true
       });
@@ -82,13 +87,12 @@ const FileUpload = ({ onFileUpload }) => {
           <h2 className="text-4xl font-bold brand-font-primary text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 mb-3 drop-shadow-lg">Upload Your PDF</h2>
           <p className="text-gray-300 brand-font-secondary text-lg">Drag and drop your document or click to browse</p>
         </div>
-        
+
         <div
-          className={`relative border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-300 relative z-10 ${
-            dragActive
+          className={`relative border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-300 relative z-10 ${dragActive
               ? 'border-yellow-400 bg-gradient-to-br from-yellow-400/10 to-yellow-500/10 scale-105 shadow-2xl ring-4 ring-yellow-400/20'
               : 'border-yellow-400/40 hover:border-yellow-400 hover:bg-yellow-400/5 backdrop-blur-sm'
-          }`}
+            }`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
@@ -101,14 +105,14 @@ const FileUpload = ({ onFileUpload }) => {
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             disabled={uploading}
           />
-          
+
           <div className="space-y-8">
             <div className="mx-auto w-28 h-28 bg-gradient-to-r from-yellow-400/20 to-yellow-500/20 rounded-3xl flex items-center justify-center ring-2 ring-yellow-400/30">
               <svg className="w-14 h-14 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            
+
             <div>
               <p className="text-3xl font-bold brand-font-primary text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 mb-3">
                 {uploading ? '⏳ Processing...' : dragActive ? '🎯 Drop your PDF here' : '📄 Choose your PDF document'}
@@ -117,7 +121,7 @@ const FileUpload = ({ onFileUpload }) => {
                 {uploading ? 'Please wait while we process your file' : 'or click to browse files'}
               </p>
             </div>
-            
+
             <div className="flex items-center justify-center space-x-8 text-sm">
               <div className="flex items-center space-x-3 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-full border border-yellow-400/30">
                 <div className="w-3 h-3 bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-full animate-pulse"></div>
@@ -147,7 +151,7 @@ const FileUpload = ({ onFileUpload }) => {
                 <div className="flex-1">
                   <p className="text-yellow-400 font-bold text-xl brand-font-primary">🎉 Upload Successful!</p>
                   <p className="text-gray-300 brand-font-secondary text-lg">
-                    <span className="font-semibold">{uploadResult.fileName}</span> 
+                    <span className="font-semibold">{uploadResult.fileName}</span>
                     <span className="text-sm ml-2 text-gray-400">({Math.round(uploadResult.fileSize / 1024)} KB)</span>
                   </p>
                   <p className="text-gray-400 text-sm mt-1 brand-font-secondary">
