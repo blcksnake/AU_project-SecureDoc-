@@ -9,6 +9,17 @@ const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 const session = require('express-session');
+const csurf = require('csurf');
+const rateLimit = require('express-rate-limit');
+const validator = require('validator');
+// Rate limiting middleware (100 requests per 15 minutes per IP for critical routes)
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' }
+});
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -19,11 +30,12 @@ app.use(cors({
     origin: 'http://localhost:3000',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token'],
     optionsSuccessStatus: 200
 }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
 
 // Session middleware
 app.use(session({
@@ -31,10 +43,20 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
     cookie: {
-        secure: false, // Set to true in production with HTTPS
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
+
+// CSRF protection middleware (use cookies for token storage)
+const csrfProtection = csurf({ cookie: false });
+
+// Expose CSRF token for frontend (GET only)
+app.get('/api/csrf-token', ensureUserSession, csrfProtection, (req, res) => {
+    res.json({ csrfToken: req.csrfToken() });
+});
 
 // File storage configuration
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -126,14 +148,22 @@ function ensureUserSession(req, res, next) {
     next();
 }
 
-// Security middleware - ensure user can only access their own files
+// Security middleware - ensure user can only access their own files, sanitize fileId
 function checkFileAccess(req, res, next) {
     const userId = req.session.userId;
-    const fileId = req.params.fileId;
+    let fileId = req.params.fileId;
 
     if (!userId) {
         return res.status(401).json({ error: 'No user session found' });
     }
+
+    // Sanitize fileId: must be a valid UUID (prevents path traversal)
+    if (!validator.isUUID(fileId + '')) {
+        return res.status(400).json({ error: 'Invalid fileId format' });
+    }
+
+    // Prevent path traversal by normalizing and checking
+    fileId = path.basename(fileId);
 
     // Check if file belongs to user
     const filePath = path.join(uploadsDir, userId, 'original', `${fileId}.pdf`);
@@ -163,7 +193,7 @@ app.get('/api/redaction/test', (req, res) => {
 });
 
 // Upload PDF file
-app.post('/api/redaction/upload', ensureUserSession, upload.single('file'), (req, res) => {
+app.post('/api/redaction/upload', apiLimiter, ensureUserSession, csrfProtection, upload.single('file'), (req, res) => {
     try {
         console.log('Upload request received:', {
             hasFile: !!req.file,
@@ -219,7 +249,7 @@ app.post('/api/redaction/upload', ensureUserSession, upload.single('file'), (req
 });
 
 // Apply redaction
-app.post('/api/redaction/redact', ensureUserSession, async (req, res) => {
+app.post('/api/redaction/redact', apiLimiter, ensureUserSession, csrfProtection, async (req, res) => {
     console.log('Redaction endpoint hit - processing request...');
     try {
         console.log('Redaction request received:', {
@@ -228,13 +258,16 @@ app.post('/api/redaction/redact', ensureUserSession, async (req, res) => {
             headers: req.headers
         });
 
-        const { fileId, redactionAreas, reason, redactionType } = req.body;
+
+        let { fileId, redactionAreas, reason, redactionType } = req.body;
         const userId = req.session.userId;
 
-        if (!fileId) {
-            console.log('No fileId provided');
-            return res.status(400).json({ error: 'No fileId provided' });
+        // Sanitize fileId
+        if (!fileId || !validator.isUUID(fileId + '')) {
+            console.log('No fileId provided or invalid format');
+            return res.status(400).json({ error: 'No fileId provided or invalid format' });
         }
+        fileId = path.basename(fileId);
 
         if (!redactionAreas || redactionAreas.length === 0) {
             console.log('No redaction areas provided');
@@ -351,8 +384,8 @@ app.post('/api/redaction/redact', ensureUserSession, async (req, res) => {
     }
 });
 
-// Download redacted PDF
-app.get('/api/redaction/download/:fileId', ensureUserSession, checkFileAccess, (req, res) => {
+// Download redacted PDF (rate limited)
+app.get('/api/redaction/download/:fileId', apiLimiter, ensureUserSession, checkFileAccess, (req, res) => {
     try {
         const { fileId } = req.params;
         const redactedFilePath = req.redactedPath;
@@ -376,8 +409,8 @@ app.get('/api/redaction/download/:fileId', ensureUserSession, checkFileAccess, (
     }
 });
 
-// Get audit logs
-app.get('/api/redaction/audit', ensureUserSession, (req, res) => {
+// Get audit logs (rate limited)
+app.get('/api/redaction/audit', apiLimiter, ensureUserSession, (req, res) => {
     const { fileId } = req.query;
     const userId = req.session.userId;
 
@@ -400,8 +433,8 @@ app.get('/api/redaction/audit', ensureUserSession, (req, res) => {
     });
 });
 
-// Get specific file audit logs
-app.get('/api/redaction/audit/:fileId', ensureUserSession, (req, res) => {
+// Get specific file audit logs (rate limited)
+app.get('/api/redaction/audit/:fileId', apiLimiter, ensureUserSession, (req, res) => {
     const { fileId } = req.params;
     const userId = req.session.userId;
 
